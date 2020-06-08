@@ -31,6 +31,9 @@ class game:
          - lattice: function that for site i,j gives a list of neighbours, e.g.
                      [[i+1,j],[i-1,j],[i,j+1],[i+1,j-1]]
                      (default: square lattice with closed boundary conditions)
+         - max_consecutive_failures: maximum number of consecutive 
+                             failed moves that the game is allowed before it
+                             is lost.
          
         Methods implemented:
          ....
@@ -84,10 +87,39 @@ class game:
         self.number_nomoves = 0
         self.max_confailures = max_consecutive_failures 
         
-    def get_state(self):
-        return np.concatenate((np.expand_dims(self.Hemb,0),
+    def get_state(self, linear = False):
+        if linear:
+            return np.concatenate((self.Hemb.ravel(),
+                               self.Hmask[:self.nS,:self.nS].ravel()))
+        else:
+            return np.concatenate((np.expand_dims(self.Hemb,0),
                                      np.expand_dims(self.Hmask,0)))
             
+    def reset(self):
+        self.Hemb = np.zeros((self.Memb, self.Memb))
+        self.Hmask = np.zeros((self.Memb, self.Memb))
+        self.Hmask[:self.nS,:self.nS] = 1*(np.abs(self.H)>0)
+        
+        # whether it has been used or not        
+        self.usedS = np.zeros(self.nS)
+        # array of unique spins
+        self.uniqS = np.zeros(self.Memb, dtype=int)-1
+        # indices of original spin that it might be copy of
+        self.origS = np.zeros(self.Memb) 
+        # Number of spins and unique spins
+        self.N = 0
+        self.N0 = 0
+        
+        # State: turn of copying or adding a new one
+        self.copyadd = 1
+        self.empty_sites = self.Memb
+        self.terms_left = (self.Hmask>0).sum()
+        self.finished = 0
+        self.score = 0
+        self.reward = 0
+        self.state = self.get_state()
+        self.number_nomoves = 0
+        return self.state
     
     def __len__(self):
         return self.N
@@ -166,17 +198,17 @@ class game:
     def update_score(self, i):
         if i == 0:
             # Added new spin
-            # self.score += 0.5
-            pass
+            self.reward += 0.25
+            #pass
         elif i == 1:
             # Copied spin
             self.reward -= 0.5
         elif i == 2:
             # Added interaction
-            self.reward += 0.25
+            self.reward += 0.5
             #pass
 
-        #self.reward -= 0.2
+        self.reward -= 0.2
         #if self.N>self.nS:
         #    self.score -= 0.5
         
@@ -200,17 +232,17 @@ class game:
         self.state = self.get_state()
 
         if (self.Hmask>0).sum()==0:
-            self.reward += self.Memb
+            self.reward += self.nS
             self.score += self.reward
             self.finished = 1 # Won
         elif self.N == self.Memb:
-            self.reward -= self.Memb
+            self.reward -= self.nS
             self.score += self.reward
-            self.finished = 2 # Lost
+            self.finished = 1 # Lost
         if self.number_nomoves > self.max_confailures:
-            self.reward -= self.Memb
+            self.reward -= self.nS
             self.score += self.reward
-            self.finished = 2
+            self.finished = 1
         
         return self.state, self.reward, self.finished
     
@@ -227,7 +259,12 @@ class game:
         for i in range(self.Hemb.shape[0]):
             stre = self.Memb*'{:.2f} '
             print(stre.format(*self.Hemb[i,:]))
-            
+    
+    def print_original(self):
+        for i in range(self.H.shape[0]):
+            stre = self.nS*'{:.2f} '
+            print(stre.format(*self.H[i,:]))
+                    
     def plot(self, fig = None, ax = None, **kwargs):
         if ax is None or fig is None:
             fig, ax = plt.subplots(1,1,**kwargs)
@@ -283,3 +320,51 @@ class game:
         ax.set_xlim(-0.05,self.Lx+0.05)
         ax.set_ylim(-0.05,self.Ly+0.05)
         return fig, ax
+
+class random_connection_game(game):
+    def __init__(self,nS, Memb = 400, p = 0.2, **kwargs):
+        '''
+           - p :
+        '''
+        self.nS = nS
+        self.Memb = Memb
+        self.p = p
+        self.H = self.generate_newH()
+        
+        super().__init__(self.H,Memb,**kwargs)
+        
+    def generate_newH(self, maxval = 0.1):
+        H = np.random.randn(self.nS,self.nS)
+        H = maxval*(H +H.transpose())/2.0
+        sel = np.abs(H)<self.p*maxval
+        H[sel] = 0.0
+        self.H = H
+        return H
+    
+    def reset(self):
+        self.H = self.generate_newH()
+        self.Hemb = np.zeros((self.Memb, self.Memb))
+        self.Hmask = np.zeros((self.Memb, self.Memb))
+        #print(self.Hmask.shape, self.H.shape, self.nS)
+        self.Hmask[:self.nS,:self.nS] = 1*(np.abs(self.H)>0)
+        
+        # whether it has been used or not        
+        self.usedS = np.zeros(self.nS)
+        # array of unique spins
+        self.uniqS = np.zeros(self.Memb, dtype=int)-1
+        # indices of original spin that it might be copy of
+        self.origS = np.zeros(self.Memb) 
+        # Number of spins and unique spins
+        self.N = 0
+        self.N0 = 0
+        
+        # State: turn of copying or adding a new one
+        self.copyadd = 1
+        self.empty_sites = self.Memb
+        self.terms_left = (self.Hmask>0).sum()
+        self.finished = 0
+        self.score = 0
+        self.reward = 0
+        self.state = self.get_state()
+        self.number_nomoves = 0
+        return self.state
