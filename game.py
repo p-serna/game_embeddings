@@ -93,7 +93,7 @@ class game:
                                self.Hmask[:self.nS,:self.nS].ravel()))
         else:
             return np.concatenate((np.expand_dims(self.Hemb,0),
-                                     np.expand_dims(self.Hmask,0)))
+                    (0.8+0.4*random.rand())*np.expand_dims(self.Hmask,0)))
             
     def reset(self):
         self.Hemb = np.zeros((self.Memb, self.Memb))
@@ -220,7 +220,7 @@ class game:
     def update_score(self, i):
         if i == 0:
             # Added new spin
-            self.reward += 0.25
+            self.reward += 0.5
             #pass
         elif i == 1:
             # Copied spin
@@ -230,11 +230,46 @@ class game:
             self.reward += 0.5
             #pass
 
-        #self.reward -= 0.2
+        self.reward -= 0.2
         #if self.N>self.nS:
         #    self.score -= 0.5
-        
+
     def step(self, move):
+        self.reward = 0.0
+        
+        if self.N0<self.nS:
+            self.add_new_spin(move[1])
+        else:    
+            spinpos_1 = self.posS[move[1]%self.N]
+            j = self.get_neighbours(spinpos_1, move[2])
+            if j> -1:
+                if self.uniqS[j] == -1:
+                    self.copy_spin(spinpos_1,j)
+                else:
+                    self.add_interaction(spinpos_1,j)
+            else:
+                self.number_nomoves += 1
+
+                self.update_score(-1)
+
+        self.state = self.get_state()
+
+        if (self.Hmask>0).sum()==0:
+            self.reward += self.nS
+            self.score += self.reward
+            self.finished = 1 # Won
+        elif self.N == self.Memb:
+            self.reward -= self.nS
+            self.score += self.reward
+            self.finished = 1 # Lost
+        if self.number_nomoves > self.max_confailures:
+            self.reward -= self.nS
+            self.score += self.reward
+            self.finished = 1
+        
+        return self.state, self.reward, self.finished
+        
+    def oldstep(self, move):
         self.reward = 0.0
         if move[0] == 0: # Add spin
             self.add_new_spin(move[1])
