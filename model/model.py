@@ -103,6 +103,7 @@ class QNetwork_Conv(nn.Module):
         self.FClist = nn.Sequential(*createblocklist(nu[3:]))
         self.FCf = nn.Linear(nu[-1], action_size)        
         self.relu = nn.ReLU()
+        self.Softmax = nn.Softmax()
         
     def forward(self, x):
         """Build a network that maps state -> action values."""
@@ -117,6 +118,8 @@ class QNetwork_Conv(nn.Module):
         x = self.relu(x)
         x = self.FClist(x)
         x = self.FCf(x)
+        x = self.Softmax(x)
+
         
         return x
     
