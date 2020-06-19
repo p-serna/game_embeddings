@@ -75,6 +75,7 @@ class game:
         self.N0 = 0
         # lattice function
         self.lattice = lattice
+        self.n_neighbours = 4
         
         # State: turn of copying or adding a new one
         self.copyadd = 1
@@ -155,23 +156,18 @@ class game:
             #It's already occupied
     
     def copy_spin(self, i, j, fer_int = 1.0):
-        if self.uniqS[i] != self.uniqS[j] and self.uniqS[j] == -1:
-            self.uniqS[j] = self.uniqS[i]
-            self.posS[self.N] = i
-            
-            self.Hemb[i,j] = fer_int
-            self.Hemb[j,i] = fer_int
-            self.Hemb[j,j] = self.Hemb[i,i]*1.0
+        self.uniqS[j] = self.uniqS[i]
+        self.posS[self.N] = j
 
-            self.N += 1
-            self.empty_sites -= 1
-            self.update_score(1)
+        self.Hemb[i,j] = fer_int
+        self.Hemb[j,i] = fer_int
+        # self.Hemb[j,j] = self.Hemb[i,i]*1.0
 
-            self.number_nomoves = 0
-        else:
-            
-            self.update_score(-1)
-            self.number_nomoves += 1
+        self.N += 1
+        self.empty_sites -= 1
+        self.update_score(1)
+
+        self.number_nomoves = 0
             
     def add_interaction(self, i, j, jint = None):
         '''
@@ -180,54 +176,33 @@ class game:
         
         i0 = self.uniqS[i] 
         j0 = self.uniqS[j]
-        
-        if i0> -1 and j0> -1:
-            jint0 = self.Hmask[i0,j0]
-            
-            # If there is no interaction test the other neighbours
-            if jint0<=0.0:
-                js = [self.get_neighbours(i, j1) for j1 in range(4)]
-                js = [ji for ji in js if ji > -1]
-                for j in js:
-                    j0 = self.uniqS[j]
-                    jint0 = self.Hmask[i0,j0]
-                    if jint0>0.0:
-                        break
                         
-            jint = self.H[i0,j0]
-            if jint0>0.0:
-                #print(jint,i0,j0)
-                self.Hemb[i,j] = jint
-                self.Hemb[j,i] = jint
+        jint = self.H[i0,j0]
+        
+        self.Hemb[i,j] = jint
+        self.Hemb[j,i] = jint
 
-                self.Hmask[i0,j0] = 0.0
-                self.Hmask[j0,i0] = 0.0
+        self.Hmask[i0,j0] = 0.0
+        self.Hmask[j0,i0] = 0.0
 
-                self.terms_left -= 2
-                self.update_score(2)
-                self.number_nomoves = 0
-            else:
-                self.update_score(-1)
-                # At least one of them does not exists
-                self.number_nomoves += 1
-        else:
-            self.update_score(-1)
-            # At least one of them does not exists
-            self.number_nomoves += 1
+        self.terms_left -= 2
+        self.update_score(2)
+        self.number_nomoves = 0
+
             
         
         
     def update_score(self, i):
         if i == 0:
             # Added new spin
-            self.reward += 0.5
-            #pass
+            #self.reward += 0.5
+            pass
         elif i == 1:
             # Copied spin
             self.reward -= 0.5
         elif i == 2:
             # Added interaction
-            self.reward += 0.5
+            self.reward += 0.2
             #pass
 
         self.reward -= 0.2
@@ -238,24 +213,45 @@ class game:
         self.reward = 0.0
         
         if self.N0<self.nS:
-            self.add_new_spin(move[1])
+            self.add_new_spin(move[0])
         else:    
-            spinpos_1 = self.posS[move[1]%self.N]
-            j = self.get_neighbours(spinpos_1, move[2])
-            if j> -1:
-                if self.uniqS[j] == -1:
-                    self.copy_spin(spinpos_1,j)
-                else:
-                    self.add_interaction(spinpos_1,j)
-            else:
-                self.number_nomoves += 1
+            spinpos_1 = self.posS[move[0]%self.N] 
+            j = self.get_neighbours(spinpos_1, move[1])
+            js = np.array([self.get_neighbours(spinpos_1, (move[1]+k)%4) 
+                          for k in range(4)])
+            
+            sel = (js > -1)
+            failed = True
+            if sel.sum()>0:
+                js = js[sel]
+                idcs = np.arange(js.shape[0])
+                i = spinpos_1
+                
+                for idx in idcs:
+                    j = js[idx]
+                    i0 = self.uniqS[i] 
+                    j0 = self.uniqS[j]
+                    if i0 != j0 and j0 == -1:
+                        self.copy_spin(i,j)
+                        failed = False
+                        break
+                    else:
+                        jint0 = self.Hmask[i0,j0]
+                        if jint0>0.0:
+                            self.add_interaction(i,j)
+                            failed = False
+                            break
+                        else:
+                            pass
 
+            if failed:
+                self.number_nomoves += 1
                 self.update_score(-1)
 
         self.state = self.get_state()
 
         if (self.Hmask>0).sum()==0:
-            self.reward += self.nS
+            self.reward += self.Memb
             self.score += self.reward
             self.finished = 1 # Won
         elif self.N == self.Memb:
@@ -267,6 +263,7 @@ class game:
             self.score += self.reward
             self.finished = 1
         
+        self.reward /= self.Memb
         return self.state, self.reward, self.finished
         
     def oldstep(self, move):
@@ -402,7 +399,7 @@ class random_connection_game(game):
         return H
     
     def reset(self):
-        self.nS = np.random.randint(4,self.nS0+1)
+        self.nS = np.random.randint(2,self.nS0+1)
         self.H = self.generate_newH()
         self.Hemb = np.zeros((self.Memb, self.Memb))
         self.Hmask = np.zeros((self.Memb, self.Memb))

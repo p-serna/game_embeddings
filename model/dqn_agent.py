@@ -86,18 +86,28 @@ class Agent():
         else:
             return self.random_choice()
 
+    def get_probs(self, state):
+        state = torch.from_numpy(state).float().unsqueeze(0).to(device)
+        self.qnetwork_online.eval()
+        with torch.no_grad():
+            action_values = self.qnetwork_online(state)
+        self.qnetwork_online.train()
+
+        return np.squeeze(action_values.cpu().data.numpy())
+    
     def get_actions(self,action_values):
-        idx = np.argmax(action_values.cpu().data.numpy())
-        move = idx % 3
-        spin_1 = (idx//3) % self.embedding_size
-        spin_2 = (idx//3)//self.embedding_size
-        return (move, spin_1, spin_2)
+        # idx = np.argmax(action_values.cpu().data.numpy())
+        # move = idx % 3
+        idx = np.random.choice(self.action_size,1, p = np.squeeze(action_values.cpu().data.numpy()))
+        spin_1 = idx[0] % self.embedding_size
+        spin_2 = idx[0]//self.embedding_size
+        return ( spin_1, spin_2)
 
     def random_choice(self):
-        move = random.randint(3)
+        # move = random.randint(3)
         spin_1 = random.randint(self.embedding_size)
         spin_2 = random.randint(self.neighbours)
-        return (move, spin_1, spin_2)
+        return (spin_1, spin_2)
         
     def learn(self, experiences, gamma):
         '''Update value parameters using given batch of experience tuples.
