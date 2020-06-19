@@ -83,17 +83,17 @@ class QNetwork_Conv(nn.Module):
         kernels = [5,5,5,5]
 
         modlist = [nn.Conv2d(2,nu[0]
-                      ,kernels[0], padding = kernels[0]//2),
+                      ,[kernels[0], 1], padding = kernels[0]//2),
                    nn.ReLU(),
                    nn.MaxPool2d(kernels[0],
                         stride = 2),
                    nn.Conv2d(nu[0],nu[1]
-                      ,kernels[1], padding = kernels[1]//2),
+                      ,[kernels[1], 1], padding = kernels[1]//2),
                    nn.ReLU(),
                    nn.MaxPool2d(kernels[1],
                         stride = 2),
                    nn.Conv2d(nu[1],nu[2]
-                      ,kernels[2], padding = kernels[2]//2),
+                      ,[kernels[2], 1], padding = kernels[2]//2),
                    nn.ReLU()
                   ]
         

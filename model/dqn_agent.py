@@ -86,6 +86,15 @@ class Agent():
         else:
             return self.random_choice()
 
+    def get_probs(self, state):
+        state = torch.from_numpy(state).float().unsqueeze(0).to(device)
+        self.qnetwork_online.eval()
+        with torch.no_grad():
+            action_values = self.qnetwork_online(state)
+        self.qnetwork_online.train()
+
+        return np.squeeze(action_values.cpu().data.numpy())
+    
     def get_actions(self,action_values):
         # idx = np.argmax(action_values.cpu().data.numpy())
         # move = idx % 3

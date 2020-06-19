@@ -251,7 +251,7 @@ class game:
         self.state = self.get_state()
 
         if (self.Hmask>0).sum()==0:
-            self.reward += self.nS
+            self.reward += self.Memb
             self.score += self.reward
             self.finished = 1 # Won
         elif self.N == self.Memb:
@@ -263,6 +263,7 @@ class game:
             self.score += self.reward
             self.finished = 1
         
+        self.reward /= self.Memb
         return self.state, self.reward, self.finished
         
     def oldstep(self, move):
@@ -398,7 +399,7 @@ class random_connection_game(game):
         return H
     
     def reset(self):
-        self.nS = np.random.randint(4,self.nS0+1)
+        self.nS = np.random.randint(2,self.nS0+1)
         self.H = self.generate_newH()
         self.Hemb = np.zeros((self.Memb, self.Memb))
         self.Hmask = np.zeros((self.Memb, self.Memb))
