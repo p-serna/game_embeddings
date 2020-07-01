@@ -14,7 +14,7 @@ BUFFER_SIZE = int(2e3)  # replay buffer size
 BATCH_SIZE = 32         # minibatch size
 GAMMA = 0.99            # discount factor
 TAU = 1e-3              # for soft update of target parameters
-LR = 1e-4               # learning rate 
+LR = 2e-3               # learning rate 
 UPDATE_EVERY = 4        # how often to update the network
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -23,8 +23,8 @@ class Agent():
     '''Interacts with and learns from the environment.'''
 
     def __init__(self, state_size, action_size, seed, embedding_size, 
-                    neighbours,
-                    nu = None, dropout = None, model = QNetwork ):
+                    neighbours, 
+                    nu = None, nconv = 3,dropout = None, model = QNetwork ):
         '''Initialize an Agent object.
         
         Params
@@ -41,9 +41,9 @@ class Agent():
 
         # Q-Network
         self.qnetwork_online = model(state_size, action_size, 
-                                       seed, nu, dropout).to(device)
+                                       seed, nu, nconv,dropout).to(device)
         self.qnetwork_target = model(state_size, action_size,
-                                        seed, nu, dropout).to(device)
+                                        seed, nu, nconv,dropout).to(device)
         self.optimizer = optim.Adam(self.qnetwork_online.parameters(), lr=LR)
 
         self.criterion = F.mse_loss
@@ -99,15 +99,12 @@ class Agent():
         # idx = np.argmax(action_values.cpu().data.numpy())
         # move = idx % 3
         idx = np.random.choice(self.action_size,1, p = np.squeeze(action_values.cpu().data.numpy()))
-        spin_1 = idx[0] % self.embedding_size
-        spin_2 = idx[0]//self.embedding_size
-        return ( spin_1, spin_2)
+        
+        return idx[0]
 
     def random_choice(self):
-        # move = random.randint(3)
-        spin_1 = random.randint(self.embedding_size)
-        spin_2 = random.randint(self.neighbours)
-        return (spin_1, spin_2)
+        idx = np.random.choice(self.action_size)
+        return idx
         
     def learn(self, experiences, gamma):
         '''Update value parameters using given batch of experience tuples.
@@ -157,7 +154,8 @@ class AgentDoubleQ(Agent):
     '''Interacts with and learns from the environment.'''
 
     def __init__(self, state_size, action_size, 
-                    seed, nu = None, dropout = None, model = QNetwork):
+                    seed, embedding_size, 
+                    neighbours, nu = None, nconv = 3, dropout = None, model = QNetwork):
         '''Initialize an Agent object.
         
         Params
@@ -168,7 +166,8 @@ class AgentDoubleQ(Agent):
             e: parameter for priority pi = |tderror| + e
             a: parameter for sampling priority pi^a/sum pk^a 
         '''    
-        super().__init__(state_size, action_size, seed, nu, dropout, model)
+        super().__init__(state_size, action_size, seed, embedding_size, 
+                    neighbours, nu, nconv,dropout, model)
         self.optimizer = optim.Adam(self.qnetwork_online.parameters(), 
                                     lr=.5e-4)
         self.e = e
@@ -204,7 +203,7 @@ class AgentDoubleQ(Agent):
 
     def step(self, state, action, reward, next_state, done):
         # Save experience in replay memory
-        self.memory.add(state, action, reward, next_state, done)
+        self.memory.add(np.expand_dims(state,0), action, reward, np.expand_dims(next_state,0), done)
         
         # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % UPDATE_EVERY
@@ -265,7 +264,8 @@ class AgentRainbow(Agent):
     '''Interacts with and learns from the environment.'''
 
     def __init__(self, state_size, action_size, 
-                    seed, nu = None, dropout = None, model = QNetwork,
+                    seed, embedding_size, 
+                    neighbours, nu = None, nconv = 3, dropout = None, model = QNetwork,
                     e = 1e-1, alpha = 0.5, beta = 1.0 ):
         '''Initialize an Agent object.
         
@@ -275,7 +275,8 @@ class AgentRainbow(Agent):
             action_size (int): dimension of each action
             seed (int): random seed
         '''    
-        super().__init__(state_size, action_size, seed, nu, dropout, model)
+        super().__init__(state_size, action_size, seed, embedding_size, 
+                    neighbours, nu, nconv, dropout, model)
         self.optimizer = optim.Adam(self.qnetwork_online.parameters(), 
                                     lr=.5e-4)
         
@@ -324,7 +325,7 @@ class AgentRainbow(Agent):
     
     def step(self, state, action, reward, next_state, done):
         # Save experience in replay memory
-        self.memory.add(state, action, reward, next_state, done)
+        self.memory.add(np.expand_dims(state,0), action, reward, np.expand_dims(next_state,0), done)
         
         # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % UPDATE_EVERY

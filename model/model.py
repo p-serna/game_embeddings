@@ -20,6 +20,8 @@ def createblocklist(nu, dropout = None):
     modlist = [x for sublist in modlist for x in sublist]
     return modlist
 
+
+
 class QNetwork(nn.Module):
     """Actor (Policy) Model."""
 
@@ -49,21 +51,27 @@ class QNetwork(nn.Module):
         self.FClist = nn.Sequential(*createblocklist(nu, self.dropout))
         self.FCf = nn.Linear(nu[-1], action_size)        
         self.relu = nn.ReLU()
+        self.Softmax = nn.Softmax()
+
         
-    def forward(self, state):
+    def forward(self, x):
         """Build a network that maps state -> action values."""
-        x = self.FC0(state)
+        shape = torch.prod(torch.tensor(x.shape[1:])).item()
+        x = x.view(-1, shape)
+        
+        x = self.FC0(x)
         x = self.relu(x)
         x = self.FClist(x)
         x = self.FCf(x)
-        
+        x = self.Softmax(x)
+
         return x
 
 
 class QNetwork_Conv(nn.Module):
     """Actor (Policy) Model."""
 
-    def __init__(self, state_size, action_size, seed, nu = None, dropout = None):
+    def __init__(self, state_size, action_size, seed, nu = None, nconv = 3, dropout = None):
         """Initialize parameters and build model.
         Params
         ======
@@ -80,28 +88,29 @@ class QNetwork_Conv(nn.Module):
             nu = [32, 64, 128, 512]
         self.nu = nu
         
-        kernels = [5,5,5,5]
+        kernels = [3]*nconv
 
         modlist = [nn.Conv2d(2,nu[0]
                       ,[kernels[0], 1], padding = kernels[0]//2),
                    nn.ReLU(),
-                   nn.MaxPool2d(kernels[0],
-                        stride = 2),
-                   nn.Conv2d(nu[0],nu[1]
-                      ,[kernels[1], 1], padding = kernels[1]//2),
+                   nn.MaxPool2d([kernels[0],1],
+                        stride = 2)]
+        extendlist = [[nn.Conv2d(nu[i-1],nu[i]
+                      ,[kernels[i], 1], padding = kernels[i]//2),
                    nn.ReLU(),
-                   nn.MaxPool2d(kernels[1],
-                        stride = 2),
-                   nn.Conv2d(nu[1],nu[2]
-                      ,[kernels[2], 1], padding = kernels[2]//2),
-                   nn.ReLU()
-                  ]
+                   nn.MaxPool2d([kernels[i],1],
+                        stride = 2)] for i in range(1,nconv)]
+        extendlist = [x for sublist in extendlist for x in sublist]
+        modlist.extend(extendlist)
         
         self.convblock0 = nn.Sequential(*modlist)
         
-        self.FC0 = nn.Linear(nu[2],nu[3])
-        self.FClist = nn.Sequential(*createblocklist(nu[3:]))
+        self.FC0 = nn.Linear(nu[nconv-1],nu[nconv])
+        self.FClist = nn.Sequential(*createblocklist(nu[(nconv):]))
         self.FCf = nn.Linear(nu[-1], action_size)        
+        self.FCv0 = nn.Linear(nu[nconv], 32)        
+        self.FCv1 = nn.Linear(32, 1)
+        
         self.relu = nn.ReLU()
         self.Softmax = nn.Softmax()
         
@@ -116,11 +125,15 @@ class QNetwork_Conv(nn.Module):
         
         x = self.FC0(x)
         x = self.relu(x)
+        adv = self.relu( self.FCv0(x))
+        adv = self.relu( self.FCv1(adv))
+        advmean = adv.mean(1,keepdim=True)
+
         x = self.FClist(x)
         x = self.FCf(x)
+        x = x+adv-advmean
         x = self.Softmax(x)
-
-        
+    
         return x
     
 class DuelQNetwork(nn.Module):

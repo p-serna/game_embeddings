@@ -18,7 +18,7 @@ def square_lattice(i,j, Lx = None, Ly = None):
     
 class game:
     def __init__(self, H, Memb = None, Ls = None, lattice = square_lattice,
-                                    max_consecutive_failures = 20):
+                                    max_consecutive_failures = 20, minscore = -1.0):
         '''
         Three possible moves:   1. add new spin
                                 2. copy a spin
@@ -57,11 +57,13 @@ class game:
             self.Memb = Memb
         
         # whether it has been used or not        
-        self.usedS = np.zeros(self.nS)
+        self.usedS = np.zeros(self.nS, dtype=int)
         # array of unique spins
         self.uniqS = np.zeros(self.Memb, dtype=int)-1
         # position of spin 
-        self.posS = np.zeros(self.Memb, dtype = int) 
+        self.posS = np.zeros(self.Memb, dtype = int)-1 
+        # active
+        self.activeS = np.ones(self.nS, dtype=int)
         
         # Linear sizes
         if Ls is None:
@@ -88,6 +90,9 @@ class game:
         self.number_nomoves = 0
         self.max_confailures = max_consecutive_failures 
         
+        self.spin_tomove = 0
+        self.minscore = minscore
+        
     def get_state(self, linear = False):
         if linear:
             return np.concatenate((self.Hemb.ravel(),
@@ -106,7 +111,7 @@ class game:
         # array of unique spins
         self.uniqS = np.zeros(self.Memb, dtype=int)-1
         # indices of original spin that it might be copy of
-        self.posS = np.zeros(self.Memb, dtype = int) 
+        self.posS = np.zeros(self.Memb, dtype = int) -1
         # Number of spins and unique spins
         self.N = 0
         self.N0 = 0
@@ -120,6 +125,7 @@ class game:
         self.reward = 0
         self.state = self.get_state()
         self.number_nomoves = 0
+        self.spin_tomove = 0
         return self.state
     
     def __len__(self):
@@ -189,8 +195,55 @@ class game:
         self.update_score(2)
         self.number_nomoves = 0
 
-            
+    def rearrange0s(self, v, n0=None):
+        temp = 1*v
+        sel = temp==-1
+        if sel.sum()>0:
+            if n0 is None:
+                n0 = np.arange(temp.shape[0])[sel][0]
+
+            temp2 = 1*temp[n0:]
+            sel = (-temp2).argsort()
+            temp[n0:] = temp2[sel]
+        return temp
+    
+    def fix_newbase(self, i):
+        ''' 
+        '''
+        i0 = self.uniqS[i]
+        sel = self.uniqS == i0
+        sel = np.arange(self.Memb)[sel]
+        #print('ejem', sel.shape[0], i0, i)
+        self.N = self.N-sel.shape[0]+1
         
+        
+        self.uniqS[sel] = -1
+        self.uniqS[i] = i0
+        
+        h0 = self.H[i0,i0]
+        
+        for i2 in sel:
+            self.posS[self.posS==i2] = -1
+            self.Hemb[i2,:] = 0.0
+            self.Hemb[:,i2] = 0.0
+        self.posS[i0] = i
+        self.posS = self.rearrange0s(self.posS)
+        
+        self.Hemb[i,i] = h0
+        
+        for j in range(self.Hemb.shape[0]):
+            #self.Hemb[i,j] = 0.0
+            #self.Hemb[j,i] = 0.0
+            j0 = self.uniqS[j]
+            if j0> -1:
+                self.Hmask[i0,j0] = 1*(np.abs(self.H[i0,j0])>0)
+                self.Hmask[j0,i0] = 1*(np.abs(self.H[i0,j0])>0)
+        np.fill_diagonal(self.Hmask,np.zeros(self.Memb))
+            
+        self.terms_left = (self.Hmask>0).sum()
+        
+        self.update_score(3)
+            
         
     def update_score(self, i):
         if i == 0:
@@ -204,6 +257,9 @@ class game:
             # Added interaction
             self.reward += 0.2
             #pass
+        elif i==3:
+            # change base
+            self.reward -= 0.5
 
         self.reward -= 0.2
         #if self.N>self.nS:
@@ -213,95 +269,69 @@ class game:
         self.reward = 0.0
         
         if self.N0<self.nS:
-            self.add_new_spin(move[0])
-        else:    
-            spinpos_1 = self.posS[move[0]%self.N] 
-            j = self.get_neighbours(spinpos_1, move[1])
-            js = np.array([self.get_neighbours(spinpos_1, (move[1]+k)%4) 
+            self.add_new_spin(move)
+        else:
+            spinpos_1 = self.posS[self.spin_tomove]
+            moveT = move
+            if moveT==4:
+                self.fix_newbase(spinpos_1)
+                #pass
+            elif moveT == 5:
+                pass
+                # dont do anything
+            else:
+                j = self.get_neighbours(spinpos_1, moveT)
+                js = np.array([self.get_neighbours(spinpos_1, (moveT+k)%4) 
                           for k in range(4)])
             
-            sel = (js > -1)
-            failed = True
-            if sel.sum()>0:
-                js = js[sel]
-                idcs = np.arange(js.shape[0])
-                i = spinpos_1
-                
-                for idx in idcs:
-                    j = js[idx]
-                    i0 = self.uniqS[i] 
-                    j0 = self.uniqS[j]
-                    if i0 != j0 and j0 == -1:
-                        self.copy_spin(i,j)
-                        failed = False
-                        break
-                    else:
-                        jint0 = self.Hmask[i0,j0]
-                        if jint0>0.0:
-                            self.add_interaction(i,j)
+                sel = (js > -1)
+                failed = True
+                if sel.sum()>0:
+                    js = js[sel]
+                    idcs = np.arange(js.shape[0])
+                    i = spinpos_1
+
+                    for idx in idcs:
+                        j = js[idx]
+                        i0 = self.uniqS[i] 
+                        j0 = self.uniqS[j]
+                        if i0 != j0 and j0 == -1:
+                            self.copy_spin(i,j)
                             failed = False
                             break
                         else:
-                            pass
+                            jint0 = self.Hmask[i0,j0]
+                            if jint0>0.0:
+                                self.add_interaction(i,j)
+                                failed = False
+                                break
+                            else:
+                                pass
 
-            if failed:
-                self.number_nomoves += 1
-                self.update_score(-1)
+                if failed:
+                    self.number_nomoves += 1
+                    self.update_score(-1)
 
         self.state = self.get_state()
 
         if (self.Hmask>0).sum()==0:
             self.reward += self.Memb
-            self.score += self.reward
             self.finished = 1 # Won
         elif self.N == self.Memb:
             self.reward -= self.nS
-            self.score += self.reward
             self.finished = 1 # Lost
         if self.number_nomoves > self.max_confailures:
             self.reward -= self.nS
-            self.score += self.reward
             self.finished = 1
-        
+            
+        self.spin_tomove = (self.spin_tomove +1)%self.N 
         self.reward /= self.Memb
-        return self.state, self.reward, self.finished
-        
-    def oldstep(self, move):
-        self.reward = 0.0
-        if move[0] == 0: # Add spin
-            self.add_new_spin(move[1])
-        else: # Copy spin
-            if self.N>0:
-                #print(move[1]%self.N, self.posS)
-                spinpos_1 = self.posS[move[1]%self.N]
-                j = self.get_neighbours(spinpos_1, move[2])
-                if j> -1:
-                    if self.uniqS[j] == -1:
-                        self.copy_spin(spinpos_1,j)
-                    else:
-                        self.add_interaction(spinpos_1,j)
-                else:
-                    self.number_nomoves += 1
-                    
-                    self.update_score(-1)
-        
-        self.state = self.get_state()
-
-        if (self.Hmask>0).sum()==0:
-            self.reward += self.nS
-            self.score += self.reward
-            self.finished = 1 # Won
-        elif self.N == self.Memb:
-            self.reward -= self.nS
-            self.score += self.reward
-            self.finished = 1 # Lost
-        if self.number_nomoves > self.max_confailures:
-            self.reward -= self.nS
-            self.score += self.reward
+        self.score += self.reward
+        if self.score<self.minscore:
             self.finished = 1
-        
         return self.state, self.reward, self.finished
-    
+        
+
     def get_neighbours(self, i, j):
         ix, iy = i%self.Lx, i//self.Lx
         try:
@@ -395,6 +425,8 @@ class random_connection_game(game):
         H = maxval*(H +H.transpose())/2.0
         sel = np.abs(H)<self.p*maxval
         H[sel] = 0.0
+        np.fill_diagonal(H, maxval*np.random.randn(self.nS))
+
         self.H = H
         return H
     
@@ -411,7 +443,7 @@ class random_connection_game(game):
         # array of unique spins
         self.uniqS = np.zeros(self.Memb, dtype=int)-1
         # indices of original spin that it might be copy of
-        self.posS = np.zeros(self.Memb, dtype = int) 
+        self.posS = np.zeros(self.Memb, dtype = int) -1
         # Number of spins and unique spins
         self.N = 0
         self.N0 = 0
@@ -425,6 +457,7 @@ class random_connection_game(game):
         self.reward = 0
         self.state = self.get_state()
         self.number_nomoves = 0
+        self.spin_tomove = 0
         return self.state
     
     
@@ -462,7 +495,7 @@ class random_connection_game_initialstate(game):
         # array of unique spins
         self.uniqS = np.zeros(self.Memb, dtype=int)-1
         # indices of original spin that it might be copy of
-        self.posS = np.zeros(self.Memb, dtype = int) 
+        self.posS = np.zeros(self.Memb, dtype = int)  -1
         # Number of spins and unique spins
         self.N = 0
         self.N0 = 0
@@ -476,10 +509,11 @@ class random_connection_game_initialstate(game):
         self.reward = 0
         self.state = self.get_state()
         self.number_nomoves = 0
+        self.spin_tomove = 0
 
         spins_pos = np.random.choice(self.Memb, size = self.nS)
         for spin_1 in spins_pos:
-            action = (spin_1, 0)
+            action = spin_1
             state, reward, done = self.step(action)
 
         self.score = 0.0
