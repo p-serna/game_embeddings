@@ -25,7 +25,7 @@ def createblocklist(nu, dropout = None):
 class QNetwork(nn.Module):
     """Actor (Policy) Model."""
 
-    def __init__(self, state_size, action_size, seed, nu = None, dropout = None):
+    def __init__(self, state_size, action_size, seed, nu = None, nconv = 3, dropout = None):
         """Initialize parameters and build model.
         Params
         ======
@@ -47,7 +47,7 @@ class QNetwork(nn.Module):
             self.dropout = None
 		
 
-        self.FC0 = nn.Linear(state_size,nu[0])
+        self.FC0 = nn.Linear(512,nu[0])
         self.FClist = nn.Sequential(*createblocklist(nu, self.dropout))
         self.FCf = nn.Linear(nu[-1], action_size)        
         self.relu = nn.ReLU()
@@ -91,14 +91,14 @@ class QNetwork_Conv(nn.Module):
         kernels = [3]*nconv
 
         modlist = [nn.Conv2d(2,nu[0]
-                      ,[kernels[0], 1], padding = kernels[0]//2),
+                      ,kernels[0], padding = kernels[0]//2),
                    nn.ReLU(),
-                   nn.MaxPool2d([kernels[0],1],
+                   nn.MaxPool2d(kernels[0],
                         stride = 2)]
         extendlist = [[nn.Conv2d(nu[i-1],nu[i]
-                      ,[kernels[i], 1], padding = kernels[i]//2),
+                      ,kernels[i], padding = kernels[i]//2),
                    nn.ReLU(),
-                   nn.MaxPool2d([kernels[i],1],
+                   nn.MaxPool2d(kernels[i],
                         stride = 2)] for i in range(1,nconv)]
         extendlist = [x for sublist in extendlist for x in sublist]
         modlist.extend(extendlist)

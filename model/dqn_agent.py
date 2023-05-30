@@ -14,7 +14,7 @@ BUFFER_SIZE = int(2e3)  # replay buffer size
 BATCH_SIZE = 32         # minibatch size
 GAMMA = 0.99            # discount factor
 TAU = 1e-3              # for soft update of target parameters
-LR = 2e-3               # learning rate 
+LR = 2e-4               # learning rate 
 UPDATE_EVERY = 4        # how often to update the network
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -47,6 +47,7 @@ class Agent():
         self.optimizer = optim.Adam(self.qnetwork_online.parameters(), lr=LR)
 
         self.criterion = F.mse_loss
+        self.stochastic = True
         
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, seed)
@@ -98,9 +99,11 @@ class Agent():
     def get_actions(self,action_values):
         # idx = np.argmax(action_values.cpu().data.numpy())
         # move = idx % 3
-        idx = np.random.choice(self.action_size,1, p = np.squeeze(action_values.cpu().data.numpy()))
-        
-        return idx[0]
+        if self.stochastic:
+            idx = np.random.choice(self.action_size,1, p = np.squeeze(action_values.cpu().data.numpy()))[0]
+        else:
+            idx = np.argmax(action_values.cpu().data.numpy())  
+        return idx
 
     def random_choice(self):
         idx = np.random.choice(self.action_size)
@@ -308,7 +311,7 @@ class AgentRainbow(Agent):
         #loss = self.criterion(qexpect, qtarget)
         loss = (qexpect - qtarget).pow(2)*weights
         
-        priorities = loss.detach().numpy()*1.0 # With or without weights?
+        priorities = loss.cpu().detach().numpy()*1.0 # With or without weights?
         
         loss = loss.mean()
         
