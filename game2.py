@@ -82,7 +82,7 @@ class game:
         # State: turn of copying or adding a new one
         self.copyadd = 1
         self.empty_sites = self.Memb
-        self.terms_left = (self.Hmask>0).sum()
+        self.terms_left = (np.abs(self.Hmask)>0).sum()
         self.finished = 0
         self.score = 0
         self.reward = 0
@@ -99,7 +99,7 @@ class game:
                                self.Hmask[:self.nS,:self.nS].ravel()))
         else:
             return np.concatenate((np.expand_dims(self.Hemb,0),
-                    (0.8+0.4*random.rand())*np.expand_dims(self.Hmask,0)))
+                    np.expand_dims(self.Hmask,0)))
             
     def reset(self):
         self.Hemb = np.zeros((self.Memb, self.Memb))
@@ -119,7 +119,7 @@ class game:
         # State: turn of copying or adding a new one
         self.copyadd = 1
         self.empty_sites = self.Memb
-        self.terms_left = (self.Hmask>0).sum()
+        self.terms_left = (np.abs(self.Hmask)>0).sum()
         self.finished = 0
         self.score = 0
         self.reward = 0
@@ -145,7 +145,7 @@ class game:
 
             # Interacting terms that we use
             h0 = self.H[self.N0, self.N0]*1.0
-            self.Hmask[self.N0, self.N0] = 0.0
+            self.Hmask[self.N0, self.N0] = h0
             
             self.Hemb[i,i] = h0
 
@@ -167,7 +167,7 @@ class game:
 
         self.Hemb[i,j] = fer_int
         self.Hemb[j,i] = fer_int
-        # self.Hemb[j,j] = self.Hemb[i,i]*1.0
+        self.Hemb[j,j] = self.Hemb[i,i]*1.0
 
         self.N += 1
         self.empty_sites -= 1
@@ -182,18 +182,22 @@ class game:
         
         i0 = self.uniqS[i] 
         j0 = self.uniqS[j]
-                        
-        jint = self.H[i0,j0]
         
-        self.Hemb[i,j] = jint
-        self.Hemb[j,i] = jint
+        if i0!= j0 and self.Hmask[i0,j0]>0:
+                        
+            jint = self.H[i0,j0]
 
-        self.Hmask[i0,j0] = 0.0
-        self.Hmask[j0,i0] = 0.0
+            self.Hemb[i,j] = jint
+            self.Hemb[j,i] = jint
 
-        self.terms_left -= 2
-        self.update_score(2)
-        self.number_nomoves = 0
+            self.Hmask[i0,j0] = 0.0
+            self.Hmask[j0,i0] = 0.0
+
+            self.terms_left -= 2
+            self.update_score(2)
+            self.number_nomoves = 0
+        else: 
+            print("Something went wrong", i0, j0, i, j)
 
     def rearrange0s(self, v, n0=None):
         temp = 1*v
@@ -212,6 +216,8 @@ class game:
         '''
         i0 = self.uniqS[i]
         sel = self.uniqS == i0
+        ncopies = sel.sum()
+
         sel = np.arange(self.Memb)[sel]
         #print('ejem', sel.shape[0], i0, i)
         self.N = self.N-sel.shape[0]+1
@@ -237,15 +243,17 @@ class game:
             j0 = self.uniqS[j]
             if j0> -1:
                 self.Hmask[i0,j0] = 1*(np.abs(self.H[i0,j0])>0)
-                self.Hmask[j0,i0] = 1*(np.abs(self.H[i0,j0])>0)
+                self.Hmask[j0,i0] = 1*(np.abs(self.H[j0,i0])>0)
         np.fill_diagonal(self.Hmask,np.zeros(self.Memb))
             
         self.terms_left = (self.Hmask>0).sum()
-        
-        self.update_score(3)
+        for i in range(self.H.shape[0]):
+            self.Hmask[i,i] = self.H[i,i]
+            
+        self.update_score(3, ncopies-1)
             
         
-    def update_score(self, i):
+    def update_score(self, i, ncopies = 0):
         if i == 0:
             # Added new spin
             #self.reward += 0.5
@@ -259,7 +267,7 @@ class game:
             #pass
         elif i==3:
             # change base
-            self.reward -= 0.5
+            self.reward += ncopies*0.5#-1.0
 
         self.reward -= 0.2
         #if self.N>self.nS:
@@ -295,26 +303,25 @@ class game:
                         j = js[idx]
                         i0 = self.uniqS[i] 
                         j0 = self.uniqS[j]
-                        if i0 != j0 and j0 == -1:
-                            self.copy_spin(i,j)
-                            failed = False
-                            break
-                        else:
-                            jint0 = self.Hmask[i0,j0]
-                            if jint0>0.0:
-                                self.add_interaction(i,j)
+                        if i0 != j0: 
+                            if j0 == -1:
+                                self.copy_spin(i,j)
                                 failed = False
                                 break
                             else:
-                                pass
-
+                                jint0 = self.Hmask[i0,j0]
+                                if jint0>0.0:
+                                    self.add_interaction(i,j)
+                                    failed = False
+                                    break
+                            
                 if failed:
                     self.number_nomoves += 1
                     self.update_score(-1)
 
         self.state = self.get_state()
 
-        if (self.Hmask>0).sum()==0:
+        if self.terms_left==0:
             self.reward += self.Memb
             self.finished = 1 # Won
         elif self.N == self.Memb:
@@ -451,7 +458,7 @@ class random_connection_game(game):
         # State: turn of copying or adding a new one
         self.copyadd = 1
         self.empty_sites = self.Memb
-        self.terms_left = (self.Hmask>0).sum()
+        self.terms_left = (np.abs(self.Hmask)>0).sum()
         self.finished = 0
         self.score = 0
         self.reward = 0
@@ -503,7 +510,7 @@ class random_connection_game_initialstate(game):
         # State: turn of copying or adding a new one
         self.copyadd = 1
         self.empty_sites = self.Memb
-        self.terms_left = (self.Hmask>0).sum()
+        self.terms_left = (np.abs(self.Hmask)>0).sum()
         self.finished = 0
         self.score = 0
         self.reward = 0
@@ -511,7 +518,7 @@ class random_connection_game_initialstate(game):
         self.number_nomoves = 0
         self.spin_tomove = 0
 
-        spins_pos = np.random.choice(self.Memb, size = self.nS)
+        spins_pos = np.random.choice(self.Memb, size = self.nS, replace = False)
         for spin_1 in spins_pos:
             action = spin_1
             state, reward, done = self.step(action)
@@ -520,3 +527,4 @@ class random_connection_game_initialstate(game):
 
         
         return self.state
+    
